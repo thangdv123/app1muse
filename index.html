@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dịch Nói Việt – Trung</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#c62828">
+<meta name="description" content="Ghi âm, dịch và đọc to tiếng Việt – tiếng Trung, hai chiều.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <h1>🎙️ Dịch Nói Việt – Trung</h1>
+  <p class="sub">Nói tiếng Việt → đọc tiếng Trung, và ngược lại</p>
+  <div class="topbar">
+    <button id="swapBtn" class="btn small">⇄ Đổi vị trí 2 khung</button>
+    <label class="autospeak"><input type="checkbox" id="autoSpeak" checked> Tự đọc bản dịch</label>
+  </div>
+  <p id="installHint" class="hint" hidden>📲 Muốn dùng như app: bấm menu Chrome (⋮) → “Thêm vào Màn hình chính”.</p>
+</header>
+
+<main id="panels">
+  <section class="panel" id="panel-vi">
+    <h2>🇻🇳 Tôi nói — Tiếng Việt</h2>
+    <div class="mic-row">
+      <button class="mic" id="micVi" aria-label="Ghi âm tiếng Việt">🎤</button>
+      <div class="mic-status" id="statusVi">Bấm mic rồi nói</div>
+    </div>
+    <textarea id="textVi" rows="2" placeholder="Hoặc gõ tiếng Việt vào đây…"></textarea>
+    <div class="actions">
+      <button id="goVi" class="btn primary">Dịch &amp; đọc → 🇨🇳</button>
+      <button id="speakVi" class="btn">🔊 Đọc lại</button>
+    </div>
+    <div class="result">
+      <div class="label">Bản dịch tiếng Trung</div>
+      <div class="zh" id="zhOut">—</div>
+      <div class="pinyin" id="pinyinOut"></div>
+      <button id="speakZh" class="btn">🔊 Đọc tiếng Trung</button>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-zh">
+    <h2>🇨🇳 Bạn Trung nói — Tiếng Trung</h2>
+    <div class="mic-row">
+      <button class="mic" id="micZh" aria-label="Ghi âm tiếng Trung">🎤</button>
+      <div class="mic-status" id="statusZh">Bấm mic rồi nói</div>
+    </div>
+    <textarea id="textZh" rows="2" placeholder="Hoặc gõ tiếng Trung vào đây…"></textarea>
+    <div class="actions">
+      <button id="goZh" class="btn primary">Dịch &amp; đọc → 🇻🇳</button>
+      <button id="speakZh2" class="btn">🔊 Đọc lại</button>
+    </div>
+    <div class="result">
+      <div class="label">Bản dịch tiếng Việt</div>
+      <div class="vi" id="viOut">—</div>
+      <button id="speakVi2" class="btn">🔊 Đọc tiếng Việt</button>
+    </div>
+  </section>
+</main>
+
+<section class="phrases">
+  <h2>💬 Câu mẫu — bấm là đọc tiếng Trung</h2>
+  <div id="phraseGrid" class="phrase-grid"></div>
+</section>
+
+<section class="history">
+  <h2>🕘 Lịch sử <button id="clearHist" class="btn small">Xóa</button></h2>
+  <ul id="histList"></ul>
+</section>
+
+<footer>
+  <p>Chạy tốt nhất trên Chrome (Android) • Cần mạng để dịch • Cho phép micro khi trình duyệt hỏi.</p>
+</footer>
+
+<script src="app.js"></script>
+<script>
+if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js').catch(function(){}); }
+window.addEventListener('beforeinstallprompt', function(){ document.getElementById('installHint').hidden = false; });
+</script>
+</body>
+</html>

@@ -200,4 +200,12 @@ PHRASES.forEach(function(p) {
   grid.appendChild(b);
 });
 
+// Cảnh báo khi mở file tải về (không phải link https): micro không chạy được.
+if (!window.isSecureContext) {
+  const w = $('insecureWarn');
+  if (w) w.hidden = false;
+  $('statusVi').textContent = 'Đang mở file tải về nên micro không chạy. Mở bằng link https trong Chrome.';
+  $('statusZh').textContent = 'Đang mở file tải về nên micro không chạy. Mở bằng link https trong Chrome.';
+}
+
 renderHist();

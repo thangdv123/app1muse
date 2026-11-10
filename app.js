@@ -42,6 +42,17 @@ function speak(text, lang) {
   speechSynthesis.speak(u);
 }
 
+// Thông báo lỗi mic bằng tiếng Việt, nói rõ cách sửa.
+function micErrorText(code) {
+  if (code === 'not-allowed') return 'Micro đang bị chặn. Bấm biểu tượng ổ khóa trên thanh địa chỉ → Micro → Cho phép, rồi tải lại trang. Nhớ mở bằng Chrome, đừng mở trong app khác.';
+  if (code === 'service-not-allowed') return 'Chrome chưa cho dùng ghi âm. Mở link bằng Chrome (bấm ⋮ → Mở trong Chrome), kiểm tra mạng rồi thử lại.';
+  if (code === 'audio-capture') return 'Không tìm thấy micro. Kiểm tra micro của máy rồi thử lại.';
+  if (code === 'network') return 'Mất mạng khi gửi giọng nói đi dịch. Kiểm tra mạng rồi thử lại.';
+  if (code === 'no-speech') return 'Chưa nghe thấy gì, nói to hơn rồi bấm mic thử lại.';
+  if (code === 'aborted') return 'Đã dừng nghe. Bấm mic để nói lại.';
+  return 'Lỗi mic: ' + code + ' — thử tải lại trang, hoặc gõ chữ thay cho nói.';
+}
+
 // ---------- Ghi âm ----------
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 function startListen(lang, micBtn, statusEl, onFinal) {
@@ -61,7 +72,7 @@ function startListen(lang, micBtn, statusEl, onFinal) {
   };
   rec.onerror = function(e) {
     micBtn.classList.remove('listening');
-    statusEl.textContent = 'Lỗi mic: ' + e.error + ' — kiểm tra quyền micro.';
+    statusEl.textContent = micErrorText(e.error);
   };
   rec.onend = function() {
     micBtn.classList.remove('listening');

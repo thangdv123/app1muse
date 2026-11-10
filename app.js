@@ -178,28 +178,6 @@ $('swapBtn').onclick = function() {
   panels.appendChild(panels.firstElementChild);
 };
 
-// ---------- Câu mẫu ----------
-const PHRASES = [
-  { vi: 'Xin chào', zh: '你好', py: 'Nǐ hǎo' },
-  { vi: 'Bạn khỏe không?', zh: '你好吗？', py: 'Nǐ hǎo ma?' },
-  { vi: 'Bạn ăn cơm chưa?', zh: '你吃饭了吗？', py: 'Nǐ chī fàn le ma?' },
-  { vi: 'Hôm nay bạn có rảnh không?', zh: '你今天有空吗？', py: 'Nǐ jīntiān yǒu kòng ma?' },
-  { vi: 'Cảm ơn bạn', zh: '谢谢你', py: 'Xièxie nǐ' },
-  { vi: 'Tôi không hiểu', zh: '我不明白', py: 'Wǒ bù míngbái' },
-  { vi: 'Cái này bao nhiêu tiền?', zh: '这个多少钱？', py: 'Zhège duōshao qián?' },
-  { vi: 'Tôi muốn đi ăn', zh: '我想去吃饭', py: 'Wǒ xiǎng qù chī fàn' },
-  { vi: 'Tạm biệt', zh: '再见', py: 'Zàijiàn' },
-  { vi: 'Chúc ngủ ngon', zh: '晚安', py: 'Wǎn\'ān' }
-];
-const grid = $('phraseGrid');
-PHRASES.forEach(function(p) {
-  const b = document.createElement('button');
-  b.className = 'phrase';
-  b.innerHTML = '<div class="p-zh">' + esc(p.zh) + '</div><div class="p-py">' + esc(p.py) + '</div><div class="p-vi">' + esc(p.vi) + '</div>';
-  b.onclick = function() { speak(p.zh, 'zh-CN'); addHist({ src: p.vi, dst: p.zh, dstLang: 'zh-CN' }); };
-  grid.appendChild(b);
-});
-
 // Cảnh báo khi mở file tải về (không phải link https): micro không chạy được.
 if (!window.isSecureContext) {
   const w = $('insecureWarn');

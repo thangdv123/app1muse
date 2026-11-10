@@ -27,13 +27,7 @@ textarea { width: 100%; border: 1px solid #ddd; border-radius: 10px; padding: 10
 .zh { font-size: 22px; line-height: 1.4; }
 .vi { font-size: 18px; line-height: 1.4; }
 .pinyin { font-size: 14px; color: #888; margin: 4px 0 8px; font-style: italic; }
-.phrases h2, .history h2 { font-size: 17px; margin: 4px 0 10px; }
-.phrase-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.phrase { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 10px; cursor: pointer; text-align: left; }
-.phrase:active { background: #fdecea; }
-.phrase .p-zh { font-size: 18px; font-weight: 600; }
-.phrase .p-py { font-size: 12px; color: #888; }
-.phrase .p-vi { font-size: 13px; color: #444; margin-top: 2px; }
+.history h2 { font-size: 17px; margin: 4px 0 10px; }
 .history ul { list-style: none; padding: 0; margin: 0 0 20px; }
 .history li { background: #fff; border-radius: 10px; padding: 10px; margin-bottom: 8px; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
 .history .h-src { font-size: 14px; color: #555; }

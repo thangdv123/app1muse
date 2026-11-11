@@ -130,6 +130,18 @@ let sessionGotResult = false;
 let silentSessions = 0;
 let startTimer = null;
 let watchTimer = null;
+let silenceTimer = null;
+
+function clearSilence() { if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; } }
+// Nói xong, im 1,5 giây thì tự dịch luôn — hẹn lại mỗi lần có chữ mới.
+function armSilence(side) {
+  clearSilence();
+  silenceTimer = setTimeout(function() {
+    silenceTimer = null;
+    const t = pendingText.trim();
+    if (t && currentSide === side) finishUtterance(side, t);
+  }, 1500);
+}
 
 function setStatus(side, msg) { $(SIDE[side].status).textContent = msg; }
 // Dòng chẩn đoán dưới mic: mã giọng đang dùng, số ký tự đã nghe, lỗi gần nhất.
@@ -156,6 +168,7 @@ function clearWatch() { if (watchTimer) { clearTimeout(watchTimer); watchTimer =
 // Dừng bộ nhận giọng đang chạy, giữ nguyên trạng thái mở/tắt.
 function stopRec() {
   clearWatch();
+  clearSilence();
   if (rec) { try { rec.onend = null; rec.onerror = null; rec.onresult = null; rec.stop(); } catch (e) {} rec = null; }
 }
 // Tắt mic hẳn.
@@ -235,6 +248,7 @@ function startSession(side) {
     clearWatch();
     $(cfg.text).value = pendingText;
     diagState[side].heard = pendingText.length; updateDiag(side);
+    armSilence(side);
   };
   r.onerror = function(e) {
     if (e.error === 'aborted') return;
@@ -297,6 +311,7 @@ function advanceAttempt(side, msg) {
 
 // Mỗi đoạn chốt chỉ nhận đúng một lần, rút gọn cụm lặp rồi mới dịch.
 function finishUtterance(side, text) {
+  clearSilence();
   const clean = collapseRepeats(text);
   if (!clean || clean === lastConsumed) return;
   lastConsumed = clean;

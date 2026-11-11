@@ -1,4 +1,4 @@
-// Dịch Nói Việt – Trung: mic luôn mở, nghe -> dịch -> đọc, hai chiều.
+// Dịch Nói Việt – Trung: chạm mic để mở/tắt, nghe -> dịch -> đọc, hai chiều.
 const $ = id => document.getElementById(id);
 
 // ---------- Dịch (Google trước, MyMemory dự phòng) ----------
@@ -103,26 +103,33 @@ const SIDE = {
   zh: { lang: 'zh-CN', from: 'zh-CN', to: 'vi', mic: 'micZh', status: 'statusZh', text: 'textZh', out: 'viOut', outLang: 'vi-VN', pinyin: null }
 };
 
-// Mã giọng chuẩn + dự phòng: tiếng Trung zh-CN -> cmn-Hans-CN -> zh; tiếng Việt vi-VN -> vi.
-const LANG_FALLBACK = {
-  vi: ['vi-VN', 'vi'],
-  zh: ['zh-CN', 'cmn-Hans-CN', 'zh']
+// Chuỗi cấu hình nhận giọng dự phòng: thử lần lượt, phiên nào không trả về chữ thì chuyển sang cấu hình tiếp theo.
+const ATTEMPTS = {
+  vi: [
+    { lang: 'vi-VN', cont: false },
+    { lang: 'vi', cont: false },
+    { lang: 'vi-VN', cont: true }
+  ],
+  zh: [
+    { lang: 'zh-CN', cont: false },
+    { lang: 'cmn-Hans-CN', cont: false },
+    { lang: 'zh', cont: false },
+    { lang: 'zh-CN', cont: true },
+    { lang: 'cmn-Hans-CN', cont: true }
+  ]
 };
-const workingLangIdx = { vi: 0, zh: 0 };
-let oneShotRec = null;
-let errorCooldownUntil = 0;
+const attemptIdx = { vi: 0, zh: 0 };
 
-let alwaysOn = true;
-let currentSide = null;   // 'vi' | 'zh' | null
-let userPaused = false;
+let currentSide = null;   // 'vi' | 'zh' | null — phía nào đang mở mic
 let rec = null;
-let recActive = false;
 let pendingText = '';
-let lastSpeechAt = 0;
-let silenceTimer = null;
 let finalParts = [];
 let lastConsumed = '';
 let echoGuardUntil = 0;
+let sessionGotResult = false;
+let silentSessions = 0;
+let startTimer = null;
+let watchTimer = null;
 
 function setStatus(side, msg) { $(SIDE[side].status).textContent = msg; }
 // Dòng chẩn đoán dưới mic: mã giọng đang dùng, số ký tự đã nghe, lỗi gần nhất.
@@ -145,21 +152,66 @@ function setMicVisual(side) {
   });
 }
 
-// Mic luôn mở: nghe liên tục, ngừng nói 1,5 giây thì tự dịch + đọc, đọc xong tự mở lại.
-function startContinuous(side, langIdx) {
+function clearWatch() { if (watchTimer) { clearTimeout(watchTimer); watchTimer = null; } }
+// Dừng bộ nhận giọng đang chạy, giữ nguyên trạng thái mở/tắt.
+function stopRec() {
+  clearWatch();
+  if (rec) { try { rec.onend = null; rec.onerror = null; rec.onresult = null; rec.stop(); } catch (e) {} rec = null; }
+}
+// Tắt mic hẳn.
+function stopMic() {
+  if (startTimer) { clearTimeout(startTimer); startTimer = null; }
+  stopRec();
+  currentSide = null;
+  setMicVisual(null);
+}
+
+// Chạm mic: đang mở phía này thì tắt; đang mở phía kia thì tắt hẳn phía kia rồi mở phía này.
+function onMicTap(side) {
+  if (currentSide === side) {
+    const tail = pendingText.trim();
+    stopMic();
+    if (tail) finishUtterance(side, tail);
+    else setStatus(side, 'Bấm mic rồi nói');
+  } else {
+    const prev = currentSide;
+    stopMic();
+    if (prev) setStatus(prev, 'Bấm mic rồi nói');
+    // Chờ nửa giây cho mic cũ nhả hẳn ra rồi mới mở mic mới, tránh xung đột.
+    if (prev) startTimer = setTimeout(function() { startMic(side); }, 500);
+    else startMic(side);
+  }
+}
+
+// Mở mic phía này: nghe theo từng phiên ngắn nối lại cho tới khi chạm để tắt.
+function startMic(side) {
+  if (startTimer) { clearTimeout(startTimer); startTimer = null; }
   if (!SR) { setStatus(side, 'Trình duyệt này không hỗ trợ ghi âm. Hãy dùng Chrome trên Android.'); return; }
-  const langs = LANG_FALLBACK[side];
-  if (langIdx === undefined || langIdx === null) langIdx = workingLangIdx[side];
-  langIdx = Math.min(langIdx, langs.length - 1);
-  stopContinuous(true);
+  currentSide = side;
+  pendingText = ''; finalParts = []; lastConsumed = ''; sessionGotResult = false; silentSessions = 0;
+  attemptIdx[side] = 0;
+  startSession(side);
+}
+
+function startSession(side) {
+  if (currentSide !== side) return;
+  stopRec();
+  sessionGotResult = false;
   speakToken++;
   if ('speechSynthesis' in window) speechSynthesis.cancel();
   const cfg = SIDE[side];
+  const list = ATTEMPTS[side];
+  const att = list[attemptIdx[side]];
   const r = new SR();
-  r.lang = langs[langIdx]; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
-  diagState[side].lang = langs[langIdx]; diagState[side].err = '—'; updateDiag(side);
-  rec = r; currentSide = side; userPaused = false;
-  pendingText = ''; lastSpeechAt = 0; finalParts = []; lastConsumed = '';
+  r.lang = att.lang; r.continuous = att.cont; r.interimResults = true; r.maxAlternatives = 1;
+  rec = r;
+  diagState[side].lang = att.lang + (att.cont ? ' (liên tục)' : ''); diagState[side].err = '—'; updateDiag(side);
+  // Phiên liên tục mà 10 giây không có chữ nào thì dừng để thử cấu hình khác.
+  if (att.cont) {
+    watchTimer = setTimeout(function() {
+      if (rec === r && !sessionGotResult && currentSide === side) { try { r.stop(); } catch (e) {} }
+    }, 10000);
+  }
   r.onresult = function(e) {
     // Vừa đọc xong, loa còn vang: bỏ qua tiếng vang thu lại trong lúc này.
     if (Date.now() < echoGuardUntil) return;
@@ -178,77 +230,69 @@ function startContinuous(side, langIdx) {
     // Chỉ xử lý khi văn bản thật sự thay đổi.
     if (next === pendingText) return;
     pendingText = next;
+    sessionGotResult = true;
+    silentSessions = 0;
+    clearWatch();
     $(cfg.text).value = pendingText;
-    if (pendingText) lastSpeechAt = Date.now();
     diagState[side].heard = pendingText.length; updateDiag(side);
   };
-  r.onstart = function() { workingLangIdx[side] = langIdx; };
   r.onerror = function(e) {
-    if (e.error === 'aborted' || e.error === 'no-speech') return;
-    // Mã giọng này máy không hỗ trợ: thử mã dự phòng tiếp theo.
-    if (e.error === 'language-not-supported' && langIdx < langs.length - 1) {
-      r.onend = null;
-      setTimeout(function() { if (alwaysOn && !userPaused && currentSide === side) startContinuous(side, langIdx + 1); }, 300);
+    if (e.error === 'aborted') return;
+    if (e.error === 'no-speech') return; // để onend xử lý như phiên im lặng
+    if (e.error === 'language-not-supported') {
+      r.onend = null; clearWatch();
+      diagState[side].err = e.error; updateDiag(side);
+      advanceAttempt(side, 'Mã giọng ' + att.lang + ' không được hỗ trợ, đang thử mã khác…');
       return;
     }
-    recActive = false;
+    // Lỗi khác: báo rõ rồi tắt mic, để bạn bấm lại.
+    clearWatch();
+    rec = null;
+    currentSide = null;
     setMicVisual(null);
     setStatus(side, micErrorText(e.error));
     diagState[side].err = e.error; updateDiag(side);
-    if (e.error === 'not-allowed' || e.error === 'service-not-allowed' || e.error === 'audio-capture') {
-      currentSide = null;
-    } else {
-      // Lỗi tạm thời (mất mạng...): chờ 5 giây rồi tự mở lại.
-      errorCooldownUntil = Date.now() + 5000;
-      setTimeout(function() { if (alwaysOn && !userPaused && currentSide === side) startContinuous(side); }, 5000);
-    }
   };
   r.onend = function() {
-    recActive = false;
-    setMicVisual(null);
-    if (alwaysOn && !userPaused && currentSide && Date.now() >= errorCooldownUntil) {
-      const tail = pendingText.trim();
-      if (tail) {
-        // Chrome tự ngắt mà còn câu chưa dịch: chốt luôn câu đó.
-        finishUtterance(currentSide, tail);
+    clearWatch();
+    rec = null;
+    if (currentSide !== side) return; // đã tắt
+    const tail = pendingText.trim();
+    if (tail) {
+      silentSessions = 0;
+      finishUtterance(side, tail);
+    } else {
+      // Phiên im lặng: không nghe được chữ nào -> thử cấu hình tiếp theo.
+      silentSessions++;
+      if (silentSessions >= list.length) {
+        // Đã thử hết các cấu hình mà vẫn không có chữ nào.
+        currentSide = null;
+        setMicVisual(null);
+        setStatus(side, side === 'zh'
+          ? 'Không nghe được tiếng Trung trên máy này. Kiểm tra cài đặt giọng nói của máy, hoặc gõ chữ thay cho nói.'
+          : 'Không nghe được gì. Thử nói to hơn, hoặc gõ chữ thay cho nói.');
+        diagState[side].err = 'không có kết quả'; updateDiag(side);
       } else {
-        setTimeout(function() { if (alwaysOn && !userPaused && currentSide) startContinuous(currentSide); }, 300);
+        advanceAttempt(side, 'Không nghe được chữ nào, đang thử mã giọng khác…');
       }
-    } else if (currentSide && Date.now() >= errorCooldownUntil) {
-      setStatus(currentSide, 'Bấm mic rồi nói');
     }
   };
   try {
     r.start();
-    recActive = true;
     setMicVisual(side);
-    setStatus(side, 'Mic đang mở — cứ nói, chữ sẽ hiện trong ô bên dưới, ngừng 1,5 giây là tự dịch.');
-    setStatus(side === 'vi' ? 'zh' : 'vi', 'Bấm mic rồi nói');
-    watchSilence();
-  } catch (e) { recActive = false; }
+    setStatus(side, 'Mic đang mở — cứ nói, chữ sẽ hiện trong ô bên dưới, nói xong app tự dịch.');
+  } catch (err) {
+    // start() lỗi (mic cũ chưa nhả hẳn): thử lại sau nửa giây.
+    startTimer = setTimeout(function() { if (currentSide === side) startSession(side); }, 500);
+  }
 }
 
-function stopContinuous(silent) {
-  if (silenceTimer) { clearInterval(silenceTimer); silenceTimer = null; }
-  if (rec) { try { rec.onend = null; rec.onerror = null; rec.stop(); } catch (e) {} rec = null; }
-  if (oneShotRec) { try { oneShotRec.onend = null; oneShotRec.onerror = null; oneShotRec.onresult = null; oneShotRec.stop(); } catch (e) {} oneShotRec = null; }
-  recActive = false;
-  if (!silent) setMicVisual(null);
-}
-
-// Theo dõi lúc ngừng nói: im 1,5 giây thì dịch + đọc, rồi mở mic lại.
-function watchSilence() {
-  if (silenceTimer) return;
-  silenceTimer = setInterval(function() {
-    if (!recActive || !currentSide) return;
-    const text = pendingText.trim();
-    if (!text) return;
-    if (Date.now() - lastSpeechAt >= 1500) {
-      const side = currentSide;
-      clearInterval(silenceTimer); silenceTimer = null;
-      finishUtterance(side, text);
-    }
-  }, 300);
+// Thử cấu hình nhận giọng tiếp theo trong chuỗi dự phòng.
+function advanceAttempt(side, msg) {
+  const list = ATTEMPTS[side];
+  attemptIdx[side] = (attemptIdx[side] + 1) % list.length;
+  setStatus(side, msg);
+  startTimer = setTimeout(function() { if (currentSide === side) startSession(side); }, 400);
 }
 
 // Mỗi đoạn chốt chỉ nhận đúng một lần, rút gọn cụm lặp rồi mới dịch.
@@ -258,66 +302,18 @@ function finishUtterance(side, text) {
   lastConsumed = clean;
   pendingText = '';
   finalParts = [];
-  lastSpeechAt = 0;
-  stopContinuous(true);
+  stopRec();
   doTranslateSide(side, clean).then(function() {
-    if (alwaysOn && !userPaused) {
-      // Chờ hết tiếng vang loa rồi mới mở mic lại.
+    if (currentSide === side) {
+      // Chờ hết tiếng vang loa rồi mới nghe tiếp.
       setTimeout(function() {
-        if (alwaysOn && !userPaused) {
+        if (currentSide === side) {
           echoGuardUntil = Date.now() + 700;
-          startContinuous(side);
+          startSession(side);
         }
       }, 900);
     } else setStatus(side, 'Bấm mic rồi nói');
   });
-}
-
-// Chế độ bấm để nói 1 lần (khi tắt "Mic luôn mở"). Bấm mic phía nào thì phía kia tắt hẳn.
-function startListenOnce(side, onFinal, langIdx) {
-  if (!SR) { setStatus(side, 'Trình duyệt này không hỗ trợ ghi âm. Hãy dùng Chrome trên Android.'); return; }
-  const langs = LANG_FALLBACK[side];
-  if (langIdx === undefined || langIdx === null) langIdx = workingLangIdx[side];
-  langIdx = Math.min(langIdx, langs.length - 1);
-  // Tắt hẳn mọi mic đang chạy trước khi mở mic phía này.
-  stopContinuous(true);
-  const cfg = SIDE[side];
-  const other = side === 'vi' ? 'zh' : 'vi';
-  setMicVisual(side);
-  setStatus(other, 'Bấm mic rồi nói');
-  const statusEl = $(cfg.status);
-  const rec1 = new SR();
-  oneShotRec = rec1;
-  rec1.lang = langs[langIdx]; rec1.interimResults = true; rec1.maxAlternatives = 1;
-  let finalText = '', done = false;
-  statusEl.textContent = '🎙️ Đang nghe… nói đi';
-  rec1.onstart = function() { workingLangIdx[side] = langIdx; };
-  rec1.onresult = function(e) {
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) finalText += t; else interim += t;
-    }
-    onFinal(finalText || interim, !!finalText);
-  };
-  rec1.onerror = function(e) {
-    if (e.error === 'language-not-supported' && langIdx < langs.length - 1) {
-      rec1.onend = null; rec1.onresult = null;
-      setTimeout(function() { startListenOnce(side, onFinal, langIdx + 1); }, 300);
-      return;
-    }
-    setMicVisual(null);
-    oneShotRec = null;
-    statusEl.textContent = micErrorText(e.error);
-    diagState[side].err = e.error; updateDiag(side);
-  };
-  rec1.onend = function() {
-    setMicVisual(null);
-    oneShotRec = null;
-    statusEl.textContent = 'Bấm mic rồi nói';
-    if (finalText && !done) { done = true; onFinal(finalText, true); }
-  };
-  try { rec1.start(); } catch (e) { setMicVisual(null); oneShotRec = null; }
 }
 
 // ---------- Pinyin (tải khi cần, lỗi thì thôi) ----------
@@ -383,35 +379,18 @@ function doTranslateSide(side, text) {
   });
 }
 
-// Dịch từ ô gõ chữ (tạm dừng mic trong lúc dịch rồi mở lại).
+// Dịch từ ô gõ chữ (tạm dừng mic trong lúc dịch rồi mở lại nếu mic đang mở).
 function manualTranslate(side) {
   const text = $(SIDE[side].text).value.trim();
   if (!text) return;
-  const wasListening = (currentSide === side);
-  if (wasListening) stopContinuous(true);
+  const wasOn = (currentSide === side);
+  if (wasOn) stopMic();
   doTranslateSide(side, text).then(function() {
-    if (alwaysOn && !userPaused && wasListening) startContinuous(side);
+    if (wasOn) startMic(side);
   });
 }
 
-// Chạm mic: đang nghe phía này thì tắt tạm; đang nghe phía kia thì đổi phía; đang tắt thì mở lại.
-function onMicTap(side) {
-  if (alwaysOn) {
-    if (currentSide === side) {
-      userPaused = true;
-      stopContinuous();
-      currentSide = null;
-      setStatus(side, 'Đã tắt mic tạm thời — bấm lại để mở');
-    } else {
-      startContinuous(side);
-    }
-  } else {
-    startListenOnce(side, function(text, final) {
-      $(SIDE[side].text).value = text;
-      if (final) manualTranslate(side);
-    });
-  }
-}
+// Chạm mic để mở/tắt.
 $('micVi').onclick = function() { onMicTap('vi'); };
 $('micZh').onclick = function() { onMicTap('zh'); };
 $('goVi').onclick = function() { manualTranslate('vi'); };
@@ -422,18 +401,6 @@ $('speakZh2').onclick = function() { speak($('textZh').value.trim(), 'zh-CN'); }
 $('speakVi2').onclick = function() { speak($('viOut').textContent, 'vi-VN'); };
 $('textVi').addEventListener('keydown', function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); manualTranslate('vi'); } });
 $('textZh').addEventListener('keydown', function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); manualTranslate('zh'); } });
-
-// Công tắc "Mic luôn mở" trên thanh công cụ.
-$('alwaysOnMic').onchange = function() {
-  alwaysOn = this.checked;
-  if (alwaysOn) { userPaused = false; startContinuous(currentSide || 'vi'); }
-  else {
-    stopContinuous();
-    currentSide = null;
-    setStatus('vi', 'Bấm mic rồi nói');
-    setStatus('zh', 'Bấm mic rồi nói');
-  }
-};
 
 // Đổi vị trí 2 khung
 $('swapBtn').onclick = function() {
@@ -450,6 +417,3 @@ if (!window.isSecureContext) {
 }
 
 renderHist();
-
-// Mở app là mic tự mở nghe phía tiếng Việt.
-setTimeout(function() { if (alwaysOn && window.isSecureContext) startContinuous('vi'); }, 400);

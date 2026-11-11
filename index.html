@@ -20,7 +20,6 @@
   <button id="swapBtn" class="swap-btn">⇄ Đổi vị trí 2 khung</button>
 
   <div class="toggles">
-    <label class="switch-row"><span>🎙️ Mic luôn mở</span><span class="switch"><input type="checkbox" id="alwaysOnMic" checked><span class="slider"></span></span></label>
     <label class="switch-row"><span>Tự đọc bản dịch</span><span class="switch"><input type="checkbox" id="autoSpeak" checked><span class="slider"></span></span></label>
   </div>
 
@@ -30,7 +29,7 @@
   <div id="panels">
     <section class="panel" id="panel-vi">
       <h2>🇻🇳 Tôi nói — Tiếng Việt</h2>
-      <p class="panel-desc">Chỉ mở 1 mic tại một thời điểm — chạm mic phía Trung là mic Việt tắt hẳn, không ghi âm song song. Ngừng nói 1,5 giây là tự dịch sang tiếng Trung và đọc to.</p>
+      <p class="panel-desc">Chạm mic để mở, chạm lại để tắt. Chỉ mở 1 mic tại một thời điểm — chạm mic phía Trung là mic Việt tắt hẳn. Nói xong một câu, app tự dịch sang tiếng Trung và đọc to.</p>
       <div class="mic-zone">
         <div class="mic-col">
           <button class="mic mic-vi" id="micVi" aria-label="Ghi âm tiếng Việt">🎤</button>
@@ -58,7 +57,7 @@
 
     <section class="panel" id="panel-zh">
       <h2>🇨🇳 Bạn Trung nói — Tiếng Trung</h2>
-      <p class="panel-desc">Chỉ mở 1 mic tại một thời điểm — chạm mic phía Việt là mic Trung tắt hẳn, không ghi âm song song. Ngừng nói 1,5 giây là tự dịch sang tiếng Việt và đọc to.</p>
+      <p class="panel-desc">Chạm mic để mở, chạm lại để tắt. Chỉ mở 1 mic tại một thời điểm — chạm mic phía Việt là mic Trung tắt hẳn. Nói xong một câu, app tự dịch sang tiếng Việt và đọc to.</p>
       <div class="mic-zone">
         <div class="mic-col">
           <button class="mic mic-zh" id="micZh" aria-label="Ghi âm tiếng Trung">🎤</button>
@@ -89,7 +88,7 @@
     <ul id="histList"></ul>
   </section>
 
-  <p class="foot-note">Mic luôn mở: cứ nói, ngừng 1,5 giây app tự dịch và đọc, đọc xong mic tự nghe tiếp. Chỉ một phía được ghi âm tại một thời điểm: chạm mic phía nào thì phía kia tắt hẳn.</p>
+  <p class="foot-note">Chạm mic để mở, chạm lại để tắt. Chỉ một phía được ghi âm tại một thời điểm: chạm mic phía nào thì phía kia tắt hẳn. Nói xong một câu, app tự dịch và đọc to.</p>
 </main>
 
 <script src="app.js"></script>

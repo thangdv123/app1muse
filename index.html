@@ -26,6 +26,28 @@
   <p id="installHint" class="hint" hidden>📲 Muốn dùng như app: bấm menu Chrome (⋮) → “Thêm vào Màn hình chính”.</p>
   <p id="insecureWarn" class="warn" hidden>⚠️ Bạn đang mở file đã tải về, không phải link web — micro sẽ không chạy. Hãy mở bằng link https trong Chrome.</p>
 
+  <div class="mode-switch">
+    <button id="modePanelsBtn" class="mode-btn active">🎤 Hai khung</button>
+    <button id="modeConvBtn" class="mode-btn">💬 Hội thoại</button>
+  </div>
+
+  <section class="panel" id="convSection" hidden>
+    <h2>💬 Hội thoại tự động</h2>
+    <p class="panel-desc">Để điện thoại ở giữa hai người, bấm mic một lần rồi cứ nói chuyện tự nhiên. App tự nghe, tự nhận biết câu đó là tiếng Việt hay tiếng Trung, dịch rồi đọc to — không cần bấm gì thêm. Người này nói xong thì người kia nói tiếp.</p>
+    <div class="mic-zone">
+      <div class="mic-col">
+        <button class="mic mic-conv" id="convMic" aria-label="Bắt đầu hội thoại">🎤</button>
+        <div class="mic-tag" id="convMicTag">Đã tắt</div>
+      </div>
+      <div class="mic-info">
+        <div class="mic-status" id="convStatus">Bấm mic để bắt đầu hội thoại</div>
+        <div class="wave wave-conv" id="waveConv" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="diag">App chỉ nghe được 1 thứ tiếng tại một thời điểm nên sẽ tự đổi qua lại giữa tiếng Việt và tiếng Trung sau mỗi câu. Nếu một câu bị nghe sót, nói lại câu đó giúp app.</div>
+      </div>
+    </div>
+    <ul class="conv-list" id="convList"></ul>
+  </section>
+
   <div id="panels">
     <section class="panel" id="panel-vi">
       <h2>🇻🇳 Tôi nói — Tiếng Việt</h2>

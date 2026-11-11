@@ -133,6 +133,97 @@ let watchTimer = null;
 let silenceTimer = null;
 
 function clearSilence() { if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; } }
+// ---------- Chế độ hội thoại ----------
+// Điện thoại đặt giữa hai người: mic luôn mở, app tự đổi qua lại giữa tiếng
+// Việt và tiếng Trung sau mỗi câu, tự nhận biết câu vừa nghe là tiếng nào
+// (chữ Hán = tiếng Trung, chữ Latin = tiếng Việt) rồi dịch và đọc to.
+let convOn = false;
+let convListen = 'vi'; // phía đang nghe trong chế độ hội thoại
+function detectLang(text) {
+  return /[\u4e00-\u9fff]/.test(text) ? 'zh' : 'vi';
+}
+function updateConvStatus() {
+  const el = $('convStatus');
+  if (!el) return;
+  if (!convOn) { el.textContent = 'Bấm mic để bắt đầu hội thoại'; return; }
+  el.textContent = convListen === 'vi'
+    ? '🎙 Đang nghe tiếng Việt — cứ nói tự nhiên, nói xong im 1,5 giây là app tự dịch.'
+    : '🎙 Đang nghe tiếng Trung — cứ nói tự nhiên, nói xong im 1,5 giây là app tự dịch.';
+}
+function setConvMicVisual(on) {
+  $('convMic').classList.toggle('listening', on);
+  $('convMicTag').textContent = on ? 'Đang nghe' : 'Đã tắt';
+  $('waveConv').classList.toggle('on', on);
+}
+function addConvTurn(actual, src, dst) {
+  const list = $('convList');
+  if (!list) return;
+  const li = document.createElement('li');
+  const who = actual === 'vi' ? '🇻🇳 Bạn (tiếng Việt)' : '🇨🇳 Bạn Trung (tiếng Trung)';
+  li.innerHTML = '<div class="c-who">' + who + '</div><div class="c-src">' + esc(src) + '</div><div class="c-dst">→ ' + esc(dst) + '</div>';
+  list.appendChild(li);
+  while (list.children.length > 50) list.removeChild(list.firstChild);
+  li.scrollIntoView({ block: 'nearest' });
+}
+// Dịch một câu hội thoại theo đúng tiếng vừa nghe được, ghi vào đoạn hội thoại.
+function doTranslateConv(actual, clean) {
+  const cfg = SIDE[actual];
+  return translate(clean, cfg.from, cfg.to).then(function(out) {
+    addConvTurn(actual, clean, out);
+    addHist({ src: clean, dst: out, dstLang: cfg.outLang });
+    return new Promise(function(resolve) {
+      if ($('autoSpeak').checked) speak(out, cfg.outLang, resolve);
+      else resolve();
+    });
+  }).catch(function() {
+    const el = $('convStatus');
+    if (el) el.textContent = 'Không dịch được, kiểm tra mạng rồi nói lại câu đó.';
+  });
+}
+function switchConvListen() {
+  const other = convListen === 'vi' ? 'zh' : 'vi';
+  convListen = other;
+  currentSide = other;
+  silentSessions = 0;
+  attemptIdx[other] = 0;
+  updateConvStatus();
+  startSession(other);
+}
+function startConv() {
+  stopMic();
+  convOn = true;
+  convListen = 'vi';
+  currentSide = 'vi';
+  pendingText = ''; finalParts = []; lastConsumed = ''; sessionGotResult = false; silentSessions = 0;
+  attemptIdx.vi = 0; attemptIdx.zh = 0;
+  setConvMicVisual(true);
+  updateConvStatus();
+  startSession('vi');
+}
+function stopConv(translateTail) {
+  const tail = pendingText.trim();
+  convOn = false;
+  stopMic();
+  setConvMicVisual(false);
+  updateConvStatus();
+  if (translateTail && tail) {
+    const clean = collapseRepeats(tail);
+    if (clean) doTranslateConv(detectLang(clean), clean);
+  }
+}
+function setMode(mode) {
+  const conv = mode === 'conv';
+  $('modePanelsBtn').classList.toggle('active', !conv);
+  $('modeConvBtn').classList.toggle('active', conv);
+  $('convSection').hidden = !conv;
+  $('panels').hidden = conv;
+  $('swapBtn').hidden = conv;
+  if (conv) {
+    if (currentSide && !convOn) stopMic();
+    updateConvStatus();
+  } else if (convOn) stopConv(false);
+}
+
 // Nói xong, im 1,5 giây thì tự dịch luôn — hẹn lại mỗi lần có chữ mới.
 function armSilence(side) {
   clearSilence();
@@ -278,7 +369,11 @@ function startSession(side) {
     } else {
       // Phiên im lặng: không nghe được chữ nào -> thử cấu hình tiếp theo.
       silentSessions++;
-      if (silentSessions >= list.length) {
+      if (convOn && silentSessions >= 2) {
+        // Hội thoại: im lặng 2 phiên liên tiếp thì nhiều khả năng người kia
+        // đang nói thứ tiếng còn lại — đổi sang nghe tiếng đó.
+        switchConvListen();
+      } else if (silentSessions >= list.length) {
         // Đã thử hết các cấu hình mà vẫn không có chữ nào.
         currentSide = null;
         setMicVisual(null);
@@ -318,6 +413,26 @@ function finishUtterance(side, text) {
   pendingText = '';
   finalParts = [];
   stopRec();
+  if (convOn) {
+    // Hội thoại: dịch theo đúng tiếng vừa nghe được, rồi đổi sang nghe thứ
+    // tiếng còn lại (đợi người kia nói tiếp).
+    const actual = detectLang(clean);
+    doTranslateConv(actual, clean).then(function() {
+      setTimeout(function() {
+        if (!convOn) return;
+        echoGuardUntil = Date.now() + 700;
+        // Vừa dịch xong câu tiếng này thì đợi người kia nói tiếng còn lại.
+        const other = actual === 'vi' ? 'zh' : 'vi';
+        convListen = other;
+        currentSide = other;
+        silentSessions = 0;
+        attemptIdx[other] = 0;
+        updateConvStatus();
+        startSession(other);
+      }, 900);
+    });
+    return;
+  }
   doTranslateSide(side, clean).then(function() {
     if (currentSide === side) {
       // Chờ hết tiếng vang loa rồi mới nghe tiếp.
@@ -408,6 +523,9 @@ function manualTranslate(side) {
 // Chạm mic để mở/tắt.
 $('micVi').onclick = function() { onMicTap('vi'); };
 $('micZh').onclick = function() { onMicTap('zh'); };
+$('modePanelsBtn').onclick = function() { setMode('panels'); };
+$('modeConvBtn').onclick = function() { setMode('conv'); };
+$('convMic').onclick = function() { if (convOn) stopConv(true); else startConv(); };
 $('goVi').onclick = function() { manualTranslate('vi'); };
 $('goZh').onclick = function() { manualTranslate('zh'); };
 $('speakVi').onclick = function() { speak($('textVi').value.trim(), 'vi-VN'); };

@@ -60,3 +60,15 @@ textarea::placeholder { color: #8e8e93; }
 .history .h-dst { font-size: 16px; font-weight: 600; }
 .history .empty { color: #8e8e93; cursor: default; }
 .foot-note { color: #8e8e93; font-size: 13px; line-height: 1.6; margin: 4px 0 0; }
+.mode-switch { display: flex; gap: 8px; margin: 10px 0 4px; }
+.mode-btn { flex: 1; background: #1c1c1f; color: #b9b9be; border: 1px solid #333338; border-radius: 999px; padding: 10px 12px; font-size: 15px; cursor: pointer; }
+.mode-btn.active { background: #f0554d; border-color: #f0554d; color: #fff; font-weight: 700; }
+.mic-conv { background: #7c5cff; box-shadow: 0 0 0 6px rgba(124,92,255,.16); }
+.mic-conv.listening { animation: pulseConv 1.4s infinite; }
+@keyframes pulseConv { 0% { box-shadow: 0 0 0 6px rgba(124,92,255,.28); } 70% { box-shadow: 0 0 0 20px rgba(124,92,255,0); } 100% { box-shadow: 0 0 0 6px rgba(124,92,255,0); } }
+.wave-conv i { background: #7c5cff; }
+.conv-list { list-style: none; padding: 0; margin: 14px 0 0; }
+.conv-list li { background: #26262a; border: 1px solid #333338; border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
+.conv-list .c-who { font-size: 13px; color: #8e8e93; margin-bottom: 2px; }
+.conv-list .c-src { font-size: 16px; }
+.conv-list .c-dst { font-size: 16px; font-weight: 600; color: #7dd8a8; }

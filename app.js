@@ -125,8 +125,24 @@ let lastConsumed = '';
 let echoGuardUntil = 0;
 
 function setStatus(side, msg) { $(SIDE[side].status).textContent = msg; }
+// Dòng chẩn đoán dưới mic: mã giọng đang dùng, số ký tự đã nghe, lỗi gần nhất.
+const diagState = {
+  vi: { lang: 'vi-VN', heard: 0, err: '—' },
+  zh: { lang: 'zh-CN', heard: 0, err: '—' }
+};
+function updateDiag(side) {
+  const d = diagState[side];
+  const el = $(side === 'vi' ? 'diagVi' : 'diagZh');
+  if (el) el.textContent = 'Mã giọng đang dùng: ' + d.lang + ' • Đã nghe được: ' + d.heard + ' ký tự • Lỗi gần nhất: ' + d.err;
+}
 function setMicVisual(side) {
-  ['vi', 'zh'].forEach(function(s) { $(SIDE[s].mic).classList.toggle('listening', s === side); });
+  ['vi', 'zh'].forEach(function(s) {
+    $(SIDE[s].mic).classList.toggle('listening', s === side);
+    const tag = $(s === 'vi' ? 'micTagVi' : 'micTagZh');
+    if (tag) tag.textContent = (s === side) ? 'Đang mở mic' : 'Đã tắt';
+    const wave = $(s === 'vi' ? 'waveVi' : 'waveZh');
+    if (wave) wave.classList.toggle('on', s === side);
+  });
 }
 
 // Mic luôn mở: nghe liên tục, ngừng nói 1,5 giây thì tự dịch + đọc, đọc xong tự mở lại.
@@ -141,6 +157,7 @@ function startContinuous(side, langIdx) {
   const cfg = SIDE[side];
   const r = new SR();
   r.lang = langs[langIdx]; r.continuous = true; r.interimResults = true; r.maxAlternatives = 1;
+  diagState[side].lang = langs[langIdx]; diagState[side].err = '—'; updateDiag(side);
   rec = r; currentSide = side; userPaused = false;
   pendingText = ''; lastSpeechAt = 0; finalParts = []; lastConsumed = '';
   r.onresult = function(e) {
@@ -163,6 +180,7 @@ function startContinuous(side, langIdx) {
     pendingText = next;
     $(cfg.text).value = pendingText;
     if (pendingText) lastSpeechAt = Date.now();
+    diagState[side].heard = pendingText.length; updateDiag(side);
   };
   r.onstart = function() { workingLangIdx[side] = langIdx; };
   r.onerror = function(e) {
@@ -176,6 +194,7 @@ function startContinuous(side, langIdx) {
     recActive = false;
     setMicVisual(null);
     setStatus(side, micErrorText(e.error));
+    diagState[side].err = e.error; updateDiag(side);
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed' || e.error === 'audio-capture') {
       currentSide = null;
     } else {
@@ -203,7 +222,7 @@ function startContinuous(side, langIdx) {
     r.start();
     recActive = true;
     setMicVisual(side);
-    setStatus(side, '🎙️ Mic đang mở — cứ nói');
+    setStatus(side, 'Mic đang mở — cứ nói, chữ sẽ hiện trong ô bên dưới, ngừng 1,5 giây là tự dịch.');
     setStatus(side === 'vi' ? 'zh' : 'vi', 'Bấm mic rồi nói');
     watchSilence();
   } catch (e) { recActive = false; }
@@ -266,13 +285,11 @@ function startListenOnce(side, onFinal, langIdx) {
   const other = side === 'vi' ? 'zh' : 'vi';
   setMicVisual(side);
   setStatus(other, 'Bấm mic rồi nói');
-  const micBtn = $(cfg.mic);
   const statusEl = $(cfg.status);
   const rec1 = new SR();
   oneShotRec = rec1;
   rec1.lang = langs[langIdx]; rec1.interimResults = true; rec1.maxAlternatives = 1;
   let finalText = '', done = false;
-  micBtn.classList.add('listening');
   statusEl.textContent = '🎙️ Đang nghe… nói đi';
   rec1.onstart = function() { workingLangIdx[side] = langIdx; };
   rec1.onresult = function(e) {
@@ -289,17 +306,18 @@ function startListenOnce(side, onFinal, langIdx) {
       setTimeout(function() { startListenOnce(side, onFinal, langIdx + 1); }, 300);
       return;
     }
-    micBtn.classList.remove('listening');
+    setMicVisual(null);
     oneShotRec = null;
     statusEl.textContent = micErrorText(e.error);
+    diagState[side].err = e.error; updateDiag(side);
   };
   rec1.onend = function() {
-    micBtn.classList.remove('listening');
+    setMicVisual(null);
     oneShotRec = null;
     statusEl.textContent = 'Bấm mic rồi nói';
     if (finalText && !done) { done = true; onFinal(finalText, true); }
   };
-  try { rec1.start(); } catch (e) { micBtn.classList.remove('listening'); oneShotRec = null; }
+  try { rec1.start(); } catch (e) { setMicVisual(null); oneShotRec = null; }
 }
 
 // ---------- Pinyin (tải khi cần, lỗi thì thôi) ----------
@@ -328,7 +346,7 @@ function getHist() { try { return JSON.parse(localStorage.getItem(HIST_KEY)) || 
 function esc(s) { return String(s).replace(/[&<>"]/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 function addHist(item) {
   const h = getHist(); h.unshift(item);
-  try { localStorage.setItem(HIST_KEY, JSON.stringify(h.slice(0, 30))); } catch (e) {}
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(h.slice(0, 50))); } catch (e) {}
   renderHist();
 }
 function renderHist() {

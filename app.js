@@ -43,22 +43,106 @@ function pickVoice(lang) {
   }
   return null;
 }
-function speak(text, lang, onend) {
-  if (!('speechSynthesis' in window)) { alert('Trình duyệt này không hỗ trợ đọc giọng nói. Hãy dùng Chrome.'); if (onend) onend(); return; }
-  if (!text || text === '—') { if (onend) onend(); return; }
-  speakToken++;
-  const myToken = speakToken;
-  speechSynthesis.cancel();
+// ---------- Đọc giọng ONLINE ----------
+// Giọng đọc lấy từ Google qua mạng (translate_tts), máy nào cũng nghe được,
+// không cần cài gói giọng trên điện thoại. Giọng của máy chỉ là dự phòng.
+let onlineAudio = null;
+let onlineToken = 0;
+let onlineFinish = null;
+
+// Dừng giọng online đang phát. finish được gọi với reason 'cancelled'.
+function stopOnlineAudio() {
+  onlineToken++;
+  const f = onlineFinish; onlineFinish = null;
+  if (onlineAudio) {
+    try { onlineAudio.onended = null; onlineAudio.onerror = null; onlineAudio.pause(); onlineAudio.src = ''; } catch (e) {}
+    onlineAudio = null;
+  }
+  if (f) f(false, 'cancelled');
+}
+
+// Cắt câu thành từng đoạn ngắn (Google TTS chỉ nhận ~200 ký tự/lần).
+function splitTtsChunks(text, maxLen) {
+  const parts = text.match(/[^。！？；，、.!?;,]+[。！？；，、.!?;,]?/g) || [text];
+  const chunks = [];
+  for (let i = 0; i < parts.length; i++) {
+    let p = parts[i];
+    while (p.length > maxLen) {
+      let cut = maxLen;
+      const sp = p.lastIndexOf(' ', maxLen);
+      if (sp > maxLen / 2) cut = sp + 1;
+      chunks.push(p.slice(0, cut));
+      p = p.slice(cut);
+    }
+    if (p) chunks.push(p);
+  }
+  return chunks.filter(function(c) { return c.trim(); });
+}
+
+// Phát lần lượt các đoạn bằng giọng online. finish(ok, reason) chỉ gọi đúng 1 lần.
+function playOnlineChunks(chunks, lang, finish) {
+  onlineFinish = finish;
+  const myToken = onlineToken;
+  const tl = lang.toLowerCase().indexOf('zh') === 0 ? 'zh-CN' : 'vi';
+  let i = 0;
+  function failOnce() {
+    const f = onlineFinish; onlineFinish = null;
+    if (f) f(false, 'error');
+  }
+  function next() {
+    if (myToken !== onlineToken) return; // đã bị dừng, stopOnlineAudio đã gọi finish
+    if (i >= chunks.length) {
+      onlineAudio = null;
+      const f = onlineFinish; onlineFinish = null;
+      if (f) f(true, 'done');
+      return;
+    }
+    const url = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=' + tl + '&client=tw-ob&q=' + encodeURIComponent(chunks[i]);
+    const a = new Audio(url);
+    onlineAudio = a;
+    a.onended = function() { a.onended = null; a.onerror = null; i++; next(); };
+    a.onerror = function() { if (onlineAudio === a) onlineAudio = null; a.onended = null; a.onerror = null; failOnce(); };
+    let p = null;
+    try { p = a.play(); } catch (e) { p = null; }
+    if (p && p.catch) p.catch(function() { if (onlineAudio === a) onlineAudio = null; a.onended = null; a.onerror = null; failOnce(); });
+  }
+  next();
+}
+
+// Đọc bằng giọng của máy (dự phòng khi giọng online lỗi).
+function speakLocal(text, lang, done) {
+  if (!('speechSynthesis' in window)) { done(false, 'error'); return; }
   const u = new SpeechSynthesisUtterance(text);
   u.lang = lang;
   const v = pickVoice(lang);
   if (v) u.voice = v;
   u.rate = 0.9;
-  if (onend) {
-    u.onend = function() { if (myToken === speakToken) onend(); };
-    u.onerror = function() { if (myToken === speakToken) onend(); };
+  let finished = false;
+  const fin = function(ok, reason) { if (!finished) { finished = true; done(ok, reason); } };
+  u.onend = function() { fin(true, 'done'); };
+  u.onerror = function() { fin(false, 'error'); };
+  try { speechSynthesis.speak(u); } catch (e) { fin(false, 'error'); }
+}
+
+// Đọc một câu: giọng online trước, lỗi thì dùng giọng của máy.
+// onend(ok, reason): ok=true đã đọc xong; reason 'cancelled' = bị ngắt giữa chừng, 'error' = đọc lỗi.
+function speak(text, lang, onend) {
+  if (!text || text === '—') { if (onend) onend(true, 'done'); return; }
+  speakToken++;
+  const myToken = speakToken;
+  stopOnlineAudio();
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  const done = function(ok, reason) { if (myToken === speakToken && onend) onend(ok, reason); };
+  const chunks = splitTtsChunks(text, 180);
+  if (chunks.length) {
+    playOnlineChunks(chunks, lang, function(ok, reason) {
+      if (ok) { done(true, 'done'); return; }
+      if (reason === 'cancelled') { done(false, 'cancelled'); return; }
+      speakLocal(text, lang, done);
+    });
+  } else {
+    speakLocal(text, lang, done);
   }
-  speechSynthesis.speak(u);
 }
 
 // Thông báo lỗi mic bằng tiếng Việt, nói rõ cách sửa.
@@ -172,7 +256,13 @@ function doTranslateConv(actual, clean) {
     addConvTurn(actual, clean, out);
     addHist({ src: clean, dst: out, dstLang: cfg.outLang });
     return new Promise(function(resolve) {
-      if ($('autoSpeak').checked) speak(out, cfg.outLang, resolve);
+      if ($('autoSpeak').checked) speak(out, cfg.outLang, function(ok, reason) {
+        if (!ok && reason === 'error') {
+          const el = $('convStatus');
+          if (el) el.textContent = 'Không đọc được giọng, kiểm tra mạng rồi thử lại.';
+        }
+        resolve();
+      });
       else resolve();
     });
   }).catch(function() {
@@ -260,6 +350,7 @@ function clearWatch() { if (watchTimer) { clearTimeout(watchTimer); watchTimer =
 function stopRec() {
   clearWatch();
   clearSilence();
+  stopOnlineAudio();
   if (rec) { try { rec.onend = null; rec.onerror = null; rec.onresult = null; rec.stop(); } catch (e) {} rec = null; }
 }
 // Tắt mic hẳn.
@@ -501,7 +592,13 @@ function doTranslateSide(side, text) {
     addHist({ src: clean, dst: out, dstLang: cfg.outLang });
     setStatus(side, 'Xong ✓');
     return new Promise(function(resolve) {
-      if ($('autoSpeak').checked) speak(out, cfg.outLang, resolve);
+      if ($('autoSpeak').checked) speak(out, cfg.outLang, function(ok, reason) {
+        if (!ok && reason === 'error' && currentSide === side) {
+          diagState[side].err = 'không đọc được giọng, kiểm tra mạng rồi thử lại';
+          updateDiag(side);
+        }
+        resolve();
+      });
       else resolve();
     });
   }).catch(function() {

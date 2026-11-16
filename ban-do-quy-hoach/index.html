@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Bản đồ quy hoạch — Bình Dương • TP.HCM</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  #map { position: fixed; inset: 0; z-index: 1; }
+  .topbar {
+    position: fixed; top: 10px; left: 10px; right: 10px; z-index: 1000;
+    display: flex; gap: 8px; align-items: center;
+  }
+  .searchbox {
+    flex: 1; display: flex; background: #fff; border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.25); overflow: hidden;
+  }
+  .searchbox input {
+    flex: 1; border: none; outline: none; padding: 12px 12px; font-size: 15px; min-width: 0;
+  }
+  .searchbox button {
+    border: none; background: #0b6fa4; color: #fff; padding: 0 14px;
+    font-size: 15px; cursor: pointer; white-space: nowrap;
+  }
+  .roundbtn {
+    width: 44px; height: 44px; border-radius: 12px; border: none; background: #fff;
+    box-shadow: 0 2px 10px rgba(0,0,0,.25); font-size: 20px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .roundbtn.active { background: #0b6fa4; color: #fff; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000;
+    background: #fff; border-radius: 16px 16px 0 0; box-shadow: 0 -2px 16px rgba(0,0,0,.25);
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); max-height: 62vh; overflow-y: auto;
+    transform: translateY(105%); transition: transform .25s ease;
+  }
+  .sheet.open { transform: translateY(0); }
+  .sheet h2 { font-size: 16px; margin-bottom: 6px; }
+  .sheet .addr { font-size: 14px; color: #333; margin-bottom: 10px; line-height: 1.45; }
+  .coords { font-size: 14px; line-height: 1.8; background: #f2f6f8; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+  .coords b { display: inline-block; min-width: 118px; color: #555; font-weight: 600; }
+  .btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    flex: 1; min-width: 140px; border: none; border-radius: 10px; padding: 12px 10px;
+    font-size: 15px; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none;
+  }
+  .btn-primary { background: #0b6fa4; color: #fff; }
+  .btn-ghost { background: #eef2f4; color: #0b3a54; }
+  .close-x {
+    position: absolute; top: 10px; right: 12px; border: none; background: none;
+    font-size: 22px; color: #888; cursor: pointer; line-height: 1;
+  }
+  .panel {
+    position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 1001;
+    background: #fff; border-radius: 16px; box-shadow: 0 2px 16px rgba(0,0,0,.3);
+    padding: 16px; display: none; max-height: 70vh; overflow-y: auto;
+  }
+  .panel.open { display: block; }
+  .panel h2 { font-size: 16px; margin-bottom: 4px; }
+  .panel p.hint { font-size: 13px; color: #666; line-height: 1.5; margin-bottom: 12px; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 13px; font-weight: 600; color: #444; margin-bottom: 4px; }
+  .field input, .field select {
+    width: 100%; padding: 11px 12px; font-size: 15px; border: 1px solid #ccc;
+    border-radius: 10px; outline: none;
+  }
+  .field input:focus, .field select:focus { border-color: #0b6fa4; }
+  .note {
+    position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 999;
+    background: rgba(255,255,255,.95); border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.2);
+    padding: 10px 12px; font-size: 12.5px; line-height: 1.5; color: #444;
+  }
+  .note b { color: #0b3a54; }
+  .note a { color: #0b6fa4; }
+  .toast {
+    position: fixed; top: 66px; left: 50%; transform: translateX(-50%); z-index: 1100;
+    background: #222; color: #fff; padding: 9px 16px; border-radius: 20px;
+    font-size: 14px; display: none; white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis;
+  }
+  .leaflet-control-attribution { font-size: 10px !important; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="topbar">
+  <div class="searchbox">
+    <input id="searchInput" type="search" placeholder="Tìm địa chỉ, tên đường, khu vực…" enterkeyhint="search">
+    <button id="searchBtn">Tìm</button>
+  </div>
+  <button class="roundbtn" id="locateBtn" title="Vị trí của tôi">◎</button>
+  <button class="roundbtn" id="vn2000Btn" title="Đổi tọa độ VN-2000 trên sổ đỏ">⇄</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="note" id="note">
+  <b>Lớp quy hoạch chính thức</b> chỉ xem được trên cổng của Sở Quy hoạch – Kiến trúc
+  (<a href="https://gisxaydung.tphcm.gov.vn/tracuuttqh" target="_blank" rel="noopener">gisxaydung.tphcm.gov.vn</a>),
+  cổng này không cho app khác nhúng. App này giúp bạn định vị đúng thửa đất, đổi tọa độ VN-2000 trên sổ đỏ
+  sang vị trí trên bản đồ, rồi mở cổng chính thức để tra quy hoạch. Kết quả tra cứu online chỉ mang tính tham khảo.
+</div>
+
+<div class="sheet" id="sheet">
+  <button class="close-x" id="sheetClose">×</button>
+  <h2>📍 Điểm đã chọn</h2>
+  <div class="addr" id="sheetAddr">Đang lấy địa chỉ…</div>
+  <div class="coords" id="sheetCoords"></div>
+  <div class="btnrow">
+    <a class="btn btn-primary" href="https://gisxaydung.tphcm.gov.vn/tracuuttqh" target="_blank" rel="noopener">Tra cứu quy hoạch tại đây ↗</a>
+    <button class="btn btn-ghost" id="copyBtn">Sao chép tọa độ</button>
+  </div>
+</div>
+
+<div class="panel" id="vnPanel">
+  <h2>Đổi tọa độ VN-2000 trên sổ đỏ</h2>
+  <p class="hint">Nhập tọa độ X, Y ghi trên sổ đỏ (hệ VN-2000, múi chiếu 3°).
+  X là tọa độ hướng Bắc, Y là tọa độ hướng Đông. App sẽ ghim đúng vị trí thửa đất lên bản đồ.</p>
+  <div class="field">
+    <label for="provinceSel">Tỉnh / thành phố (kinh tuyến trục)</label>
+    <select id="provinceSel"></select>
+  </div>
+  <div class="field">
+    <label for="inputX">X — tọa độ hướng Bắc (m)</label>
+    <input id="inputX" type="number" step="any" inputmode="decimal" placeholder="VD: 1222612.30">
+  </div>
+  <div class="field">
+    <label for="inputY">Y — tọa độ hướng Đông (m)</label>
+    <input id="inputY" type="number" step="any" inputmode="decimal" placeholder="VD: 609807.90">
+  </div>
+  <div class="btnrow">
+    <button class="btn btn-primary" id="vnGoBtn">Hiện vị trí trên bản đồ</button>
+    <button class="btn btn-ghost" id="vnCloseBtn">Đóng</button>
+  </div>
+</div>
+
+<script>
+// ---------- Bản đồ nền ----------
+var osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '&copy; OpenStreetMap'
+});
+var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 19, attribution: 'Esri, Maxar, Earthstar Geographics'
+});
+var map = L.map('map', { layers: [osm], zoomControl: false }).setView([11.055, 106.755], 14); // VSIP 2, Tân Uyên
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+L.control.layers({ 'Đường phố': osm, 'Vệ tinh': sat }, null, { position: 'bottomright' }).addTo(map);
+
+// ---------- VN-2000: kinh tuyến trục các tỉnh (Thông tư 973/2001/TT-TCĐC, múi 3°, k=0.9999) ----------
+var ZONES = [
+  { name: 'Bình Dương', lon0: 105.75 },
+  { name: 'TP. Hồ Chí Minh', lon0: 105.75 },
+  { name: 'Đồng Nai', lon0: 107.75 },
+  { name: 'Tây Ninh', lon0: 105.50 },
+  { name: 'Bình Phước', lon0: 106.25 },
+  { name: 'Long An', lon0: 105.75 },
+  { name: 'Bà Rịa – Vũng Tàu', lon0: 107.75 }
+];
+var provinceSel = document.getElementById('provinceSel');
+ZONES.forEach(function(z, i) {
+  var o = document.createElement('option');
+  o.value = i; o.textContent = z.name + ' — kinh tuyến trục ' + z.lon0.toFixed(2) + '°';
+  provinceSel.appendChild(o);
+});
+function vnDef(lon0) {
+  return '+proj=tmerc +lat_0=0 +lon_0=' + lon0 + ' +k=0.9999 +x_0=500000 +y_0=0 +ellps=WGS84 +units=m +no_defs';
+}
+function currentDef() { return vnDef(ZONES[provinceSel.value].lon0); }
+function latlngToVN2000(lat, lng) {
+  var p = proj4('WGS84', currentDef(), [lng, lat]); // [easting, northing]
+  return { X: p[1], Y: p[0] };
+}
+function vn2000ToLatlng(X, Y) {
+  var p = proj4(currentDef(), 'WGS84', [Y, X]); // [lng, lat]
+  return { lat: p[1], lng: p[0] };
+}
+
+// ---------- Điểm đã chọn ----------
+var marker = null;
+var lastPoint = null;
+var toastTimer = null;
+function toast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.style.display = 'none'; }, 2500);
+}
+function showPoint(lat, lng, fly) {
+  lastPoint = { lat: lat, lng: lng };
+  if (marker) map.removeLayer(marker);
+  marker = L.marker([lat, lng]).addTo(map);
+  if (fly) map.flyTo([lat, lng], Math.max(map.getZoom(), 16), { duration: 0.8 });
+  var vn = latlngToVN2000(lat, lng);
+  document.getElementById('sheetCoords').innerHTML =
+    '<b>WGS84 (lat, lng):</b> ' + lat.toFixed(6) + ', ' + lng.toFixed(6) + '<br>' +
+    '<b>VN-2000 X (Bắc):</b> ' + vn.X.toFixed(2) + ' m<br>' +
+    '<b>VN-2000 Y (Đông):</b> ' + vn.Y.toFixed(2) + ' m<br>' +
+    '<b>Tỉnh đang dùng:</b> ' + ZONES[provinceSel.value].name + ' (kinh tuyến trục ' + ZONES[provinceSel.value].lon0.toFixed(2) + '°)';
+  document.getElementById('sheetAddr').textContent = 'Đang lấy địa chỉ…';
+  document.getElementById('sheet').classList.add('open');
+  document.getElementById('note').style.display = 'none';
+  reverseGeocode(lat, lng);
+}
+function reverseGeocode(lat, lng) {
+  fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lng + '&zoom=18&addressdetails=1&accept-language=vi', {
+    headers: { 'Accept': 'application/json' }
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if (lastPoint && Math.abs(lastPoint.lat - lat) < 1e-9 && Math.abs(lastPoint.lng - lng) < 1e-9) {
+      document.getElementById('sheetAddr').textContent = d.display_name || 'Không xác định được địa chỉ tại điểm này.';
+    }
+  })
+  .catch(function(){ document.getElementById('sheetAddr').textContent = 'Không lấy được địa chỉ (mất mạng?).'; });
+}
+map.on('click', function(e){ showPoint(e.latlng.lat, e.latlng.lng, false); });
+document.getElementById('sheetClose').onclick = function(){
+  document.getElementById('sheet').classList.remove('open');
+  document.getElementById('note').style.display = 'block';
+};
+document.getElementById('copyBtn').onclick = function(){
+  if (!lastPoint) return;
+  var vn = latlngToVN2000(lastPoint.lat, lastPoint.lng);
+  var text = 'WGS84: ' + lastPoint.lat.toFixed(6) + ', ' + lastPoint.lng.toFixed(6) +
+    ' | VN-2000 (' + ZONES[provinceSel.value].name + '): X=' + vn.X.toFixed(2) + ' Y=' + vn.Y.toFixed(2);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function(){ toast('Đã sao chép tọa độ'); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    toast('Đã sao chép tọa độ');
+  }
+};
+
+// ---------- Tìm địa chỉ ----------
+function doSearch() {
+  var q = document.getElementById('searchInput').value.trim();
+  if (!q) { toast('Nhập địa chỉ hoặc tên đường cần tìm'); return; }
+  var url = 'https://nominatim.openstreetmap.org/search?format=json&countrycodes=vn&limit=5&accept-language=vi&q=' + encodeURIComponent(q);
+  fetch(url, { headers: { 'Accept': 'application/json' } })
+    .then(function(r){ return r.json(); })
+    .then(function(results){
+      if (!results || !results.length) { toast('Không tìm thấy: ' + q); return; }
+      var r = results[0];
+      showPoint(parseFloat(r.lat), parseFloat(r.lon), true);
+      toast(r.display_name.split(',').slice(0, 2).join(','));
+    })
+    .catch(function(){ toast('Lỗi mạng, thử lại sau'); });
+}
+document.getElementById('searchBtn').onclick = doSearch;
+document.getElementById('searchInput').addEventListener('keydown', function(e){ if (e.key === 'Enter') doSearch(); });
+
+// ---------- Vị trí của tôi ----------
+document.getElementById('locateBtn').onclick = function(){
+  if (!navigator.geolocation) { toast('Thiết bị không hỗ trợ định vị'); return; }
+  toast('Đang lấy vị trí…');
+  navigator.geolocation.getCurrentPosition(function(pos){
+    showPoint(pos.coords.latitude, pos.coords.longitude, true);
+  }, function(){ toast('Không lấy được vị trí — kiểm tra quyền vị trí'); }, { enableHighAccuracy: true, timeout: 10000 });
+};
+
+// ---------- Panel đổi tọa độ VN-2000 ----------
+document.getElementById('vn2000Btn').onclick = function(){
+  document.getElementById('vnPanel').classList.add('open');
+  document.getElementById('sheet').classList.remove('open');
+};
+document.getElementById('vnCloseBtn').onclick = function(){
+  document.getElementById('vnPanel').classList.remove('open');
+};
+document.getElementById('vnGoBtn').onclick = function(){
+  var X = parseFloat(document.getElementById('inputX').value);
+  var Y = parseFloat(document.getElementById('inputY').value);
+  if (isNaN(X) || isNaN(Y)) { toast('Nhập đủ cả X và Y (số, đơn vị mét)'); return; }
+  if (X < 100000 || X > 3000000 || Y < 100000 || Y > 900000) { toast('Tọa độ có vẻ sai — kiểm tra lại X, Y trên sổ đỏ'); return; }
+  var p = vn2000ToLatlng(X, Y);
+  if (p.lat < 8 || p.lat > 24 || p.lng < 102 || p.lng > 110) { toast('Vị trí đổi ra nằm ngoài Việt Nam — kiểm tra lại tỉnh và X, Y'); return; }
+  document.getElementById('vnPanel').classList.remove('open');
+  showPoint(p.lat, p.lng, true);
+  toast('Đã ghim vị trí từ tọa độ sổ đỏ');
+};
+</script>
+</body>
+</html>
